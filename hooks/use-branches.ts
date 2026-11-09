@@ -19,9 +19,15 @@ export function useBranches() {
 
   const createMutation = useMutation({
     mutationFn: async (data: BranchInput) => {
+      const payload = {
+        name: data.name.trim(),
+        code: data.code.trim().toUpperCase(),
+        ...(data.address?.trim() ? { address: data.address.trim() } : {}),
+        ...(data.phone?.trim() ? { phone: data.phone.trim() } : {}),
+      };
       return apiFetch<Branch>("/branches", {
         method: "POST",
-        body: JSON.stringify(data),
+        body: JSON.stringify(payload),
       });
     },
     onSuccess: (res) => {
@@ -36,9 +42,16 @@ export function useBranches() {
 
   const updateMutation = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: Partial<BranchInput> }) => {
+      // Whitelist only valid fields to comply strictly with server DTO validation
+      const payload: Record<string, string> = {};
+      if (data.name?.trim()) payload.name = data.name.trim();
+      if (data.phone !== undefined) payload.phone = data.phone.trim();
+      if (data.address !== undefined) payload.address = data.address.trim();
+      if (data.code?.trim()) payload.code = data.code.trim().toUpperCase();
+
       return apiFetch<Branch>(`/branches/${id}`, {
         method: "PATCH",
-        body: JSON.stringify(data),
+        body: JSON.stringify(payload),
       });
     },
     onSuccess: (res) => {
@@ -62,6 +75,10 @@ export function useBranches() {
       queryClient.invalidateQueries({ queryKey: ["branches"] });
     },
     onError: (err: unknown) => {
+      if (err instanceof ApiError && err.code === "BRANCH_HAS_STOCK") {
+        toast.error("Cannot delete branch: Active inventory stock exists on hand.");
+        return;
+      }
       const message = err instanceof ApiError ? err.errors?.[0]?.message || err.message : "Failed to delete branch";
       toast.error(message);
     },

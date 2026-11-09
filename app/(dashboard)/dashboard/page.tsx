@@ -162,7 +162,7 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        <div className="h-[280px] w-full">
+        <div className="h-70 w-full">
           {summaryLoading ? (
             <Skeleton className="h-full w-full" />
           ) : (
@@ -264,12 +264,12 @@ export default function DashboardPage() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="w-[130px]">Invoice</TableHead>
+                <TableHead className="w-32.5">Invoice</TableHead>
                 <TableHead>Merchandise</TableHead>
-                <TableHead className="hidden sm:table-cell w-[100px]">Method</TableHead>
-                <TableHead className="text-right w-[110px]">Total</TableHead>
-                <TableHead className="w-[90px]">Status</TableHead>
-                <TableHead className="hidden md:table-cell text-right w-[120px]">Timestamp</TableHead>
+                <TableHead className="hidden sm:table-cell w-25">Method</TableHead>
+                <TableHead className="text-right w-27.5">Total</TableHead>
+                <TableHead className="w-22.5">Status</TableHead>
+                <TableHead className="hidden md:table-cell text-right w-30">Timestamp</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>

@@ -1,12 +1,24 @@
+export interface PaginationInfo {
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+  hasNext: boolean;
+  hasPrev: boolean;
+}
+
 export type PaginationMeta =
   | {
-      type: "offset";
+      type?: "offset";
       page: number;
       limit: number;
       total: number;
       totalPages: number;
       hasNext: boolean;
       hasPrev: boolean;
+      requestId?: string;
+      timestamp?: string;
+      pagination?: PaginationInfo;
     }
   | {
       type: "cursor";
@@ -14,18 +26,50 @@ export type PaginationMeta =
       nextCursor?: string | null;
       prevCursor?: string | null;
       hasMore: boolean;
+      requestId?: string;
+      timestamp?: string;
+      pagination?: PaginationInfo;
     };
+
+export interface ResponseMeta {
+  requestId?: string;
+  timestamp?: string;
+  pagination?: PaginationInfo;
+  page?: number;
+  limit?: number;
+  total?: number;
+  totalPages?: number;
+  hasNext?: boolean;
+  hasPrev?: boolean;
+  type?: "offset" | "cursor";
+}
 
 export interface ApiResponse<T> {
   success: boolean;
   message: string;
   data: T;
-  meta?: PaginationMeta;
+  meta?: ResponseMeta & PaginationMeta;
 }
+
+export type ApiErrorCode =
+  | "AUTH_REQUIRED"
+  | "AUTH_INVALID"
+  | "CSRF_MISSING"
+  | "CSRF_MISMATCH"
+  | "FORBIDDEN"
+  | "VALIDATION_FAILED"
+  | "NOT_FOUND"
+  | "DUPLICATE_CODE"
+  | "DUPLICATE_ENTRY"
+  | "DUPLICATE_EMAIL"
+  | "BRANCH_HAS_STOCK"
+  | "SERVICE_UNAVAILABLE"
+  | "RATE_LIMITED"
+  | "INTERNAL_ERROR";
 
 export interface ApiErrorDetail {
   field?: string;
-  code?: string;
+  code?: ApiErrorCode | string;
   message: string;
 }
 
@@ -39,9 +83,23 @@ export interface ApiErrorResponse {
   };
 }
 
+/* Health & Readiness */
+export interface HealthLiveness {
+  status: "ok" | string;
+  timestamp: string;
+  uptime: number;
+}
+
+export interface HealthReadiness {
+  status: "ready" | string;
+  database: "up" | "down" | string;
+  redis: "up" | "down" | string;
+  timestamp: string;
+}
+
 /* User & Auth */
 export type GlobalRole = "OWNER" | "ADMIN" | "STAFF";
-export type BranchRole = "MANAGER" | "CASHIER" | "STOCKIST";
+export type BranchRole = "MANAGER" | "CASHIER" | "VIEWER" | "STOCKIST";
 
 export interface UserBranchMembership {
   branchId: string;
@@ -49,12 +107,24 @@ export interface UserBranchMembership {
   role: BranchRole;
 }
 
+export interface UserBranchAccess {
+  id?: string;
+  userId?: string;
+  branchId: string;
+  role: BranchRole;
+  branch?: {
+    id?: string;
+    name: string;
+    code: string;
+  };
+}
+
 export interface CurrentUser {
   userId: string;
-  email: string;
-  fullName: string;
+  email?: string;
+  fullName?: string;
   tenantId: string;
-  globalRole: GlobalRole;
+  globalRole: GlobalRole | null;
   branches: UserBranchMembership[];
 }
 
@@ -62,11 +132,14 @@ export interface UserItem {
   id: string;
   email: string;
   fullName: string;
-  globalRole: GlobalRole;
+  tenantId?: string;
+  globalRole: GlobalRole | null;
   isActive: boolean;
+  branchAccess?: UserBranchAccess[];
   branches: UserBranchMembership[];
   createdAt: string;
   updatedAt?: string;
+  deletedAt?: string | null;
 }
 
 /* Branch */
@@ -76,7 +149,9 @@ export interface Branch {
   code: string;
   address?: string | null;
   phone?: string | null;
+  tenantId?: string;
   isActive: boolean;
+  deletedAt?: string | null;
   createdAt: string;
   updatedAt?: string;
 }

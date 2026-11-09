@@ -1,6 +1,6 @@
 import { createClient } from "./supabase/server";
 import { cookies } from "next/headers";
-import type { ApiResponse, PaginationMeta } from "@/types/api";
+import type { ApiResponse, PaginationMeta, ResponseMeta } from "@/types/api";
 import { ApiError } from "./api";
 
 export interface ServerRequestOptions extends RequestInit {
@@ -10,7 +10,7 @@ export interface ServerRequestOptions extends RequestInit {
 export async function apiFetchServer<T>(
   endpoint: string,
   options: ServerRequestOptions = {}
-): Promise<{ data: T; meta?: PaginationMeta; message: string }> {
+): Promise<{ data: T; meta?: ResponseMeta & PaginationMeta; message: string }> {
   const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000/api/v1";
   
   let url = endpoint.startsWith("http") ? endpoint : `${baseUrl.replace(/\/$/, "")}/${endpoint.replace(/^\//, "")}`;

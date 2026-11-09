@@ -56,6 +56,7 @@ export default function UsersPage() {
     deleteUser,
     isDeleting,
     assignBranch,
+    updateBranchRole,
     removeBranch,
   } = useUsers();
 
@@ -88,6 +89,18 @@ export default function UsersPage() {
           ...selectedUserForBranches.branches,
           { branchId: data.branchId, branchName: branchObj?.name, role: data.role },
         ],
+      });
+    }
+  };
+
+  const handleUpdateBranchRole = async (data: { userId: string; branchId: string; role: BranchRole }) => {
+    await updateBranchRole(data);
+    if (selectedUserForBranches && selectedUserForBranches.id === data.userId) {
+      setSelectedUserForBranches({
+        ...selectedUserForBranches,
+        branches: selectedUserForBranches.branches.map((b) =>
+          b.branchId === data.branchId ? { ...b, role: data.role } : b
+        ),
       });
     }
   };
@@ -277,6 +290,7 @@ export default function UsersPage() {
               user={selectedUserForBranches}
               allBranches={branches}
               onAssignBranch={handleAssignBranch}
+              onUpdateBranchRole={handleUpdateBranchRole}
               onRemoveBranch={handleRemoveBranch}
             />
           )}

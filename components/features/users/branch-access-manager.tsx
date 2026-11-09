@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { GitBranch, Plus, Trash2, CheckCircle2 } from "lucide-react";
+import { GitBranch, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -17,6 +17,7 @@ interface BranchAccessManagerProps {
   user: UserItem;
   allBranches: Branch[];
   onAssignBranch: (data: { userId: string; branchId: string; role: BranchRole }) => Promise<void>;
+  onUpdateBranchRole?: (data: { userId: string; branchId: string; role: BranchRole }) => Promise<void>;
   onRemoveBranch: (data: { userId: string; branchId: string }) => Promise<void>;
 }
 
@@ -24,6 +25,7 @@ export function BranchAccessManager({
   user,
   allBranches,
   onAssignBranch,
+  onUpdateBranchRole,
   onRemoveBranch,
 }: BranchAccessManagerProps) {
   const [selectedBranchId, setSelectedBranchId] = useState<string>("");
@@ -31,7 +33,7 @@ export function BranchAccessManager({
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Available branches not already assigned to user
-  const assignedBranchIds = new Set(user.branches.map((b) => b.branchId));
+  const assignedBranchIds = new Set((user.branches || []).map((b) => b.branchId));
   const availableBranches = allBranches.filter((b) => !assignedBranchIds.has(b.id));
 
   const handleAdd = async () => {
@@ -49,6 +51,20 @@ export function BranchAccessManager({
     }
   };
 
+  const handleRoleChange = async (branchId: string, role: BranchRole) => {
+    if (!onUpdateBranchRole) return;
+    setIsSubmitting(true);
+    try {
+      await onUpdateBranchRole({
+        userId: user.id,
+        branchId,
+        role,
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const handleRemove = async (branchId: string) => {
     setIsSubmitting(true);
     try {
@@ -61,19 +77,21 @@ export function BranchAccessManager({
     }
   };
 
+  const userBranches = user.branches || [];
+
   return (
     <div className="space-y-4">
       <div>
         <h4 className="text-xs font-semibold text-foreground uppercase tracking-wider">
-          Assigned Branches ({user.branches.length})
+          Assigned Branches ({userBranches.length})
         </h4>
         <div className="mt-2 space-y-2">
-          {user.branches.length === 0 ? (
+          {userBranches.length === 0 ? (
             <p className="text-xs text-muted-foreground italic py-2">
               No specific branch assignment. User has workspace-level role permissions.
             </p>
           ) : (
-            user.branches.map((b) => {
+            userBranches.map((b) => {
               const branchInfo = allBranches.find((br) => br.id === b.branchId);
               return (
                 <div
@@ -94,9 +112,26 @@ export function BranchAccessManager({
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
-                    <Badge variant="outline" className="text-[10px]">
-                      {b.role}
-                    </Badge>
+                    {onUpdateBranchRole ? (
+                      <Select
+                        value={b.role}
+                        onValueChange={(val) => handleRoleChange(b.branchId, val as BranchRole)}
+                        disabled={isSubmitting}
+                      >
+                        <SelectTrigger className="h-6 text-[10px] w-24 px-1.5">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="CASHIER">CASHIER</SelectItem>
+                          <SelectItem value="MANAGER">MANAGER</SelectItem>
+                          <SelectItem value="VIEWER">VIEWER</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <Badge variant="outline" className="text-[10px]">
+                        {b.role}
+                      </Badge>
+                    )}
                     <Button
                       variant="ghost"
                       size="icon"
@@ -144,8 +179,8 @@ export function BranchAccessManager({
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="CASHIER">Cashier (POS)</SelectItem>
-                <SelectItem value="STOCKIST">Stockist</SelectItem>
                 <SelectItem value="MANAGER">Branch Manager</SelectItem>
+                <SelectItem value="VIEWER">Viewer (Read-only)</SelectItem>
               </SelectContent>
             </Select>
           </div>

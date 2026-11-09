@@ -6,7 +6,7 @@ import { apiFetch, ApiError } from "@/lib/api";
 import type { UserItem, BranchRole } from "@/types/api";
 import type { InviteUserInput, UpdateUserInput } from "@/lib/schemas";
 
-export function useUsers(filters?: { page?: number; limit?: number; isActive?: boolean }) {
+export function useUsers(filters?: { page?: number; limit?: number }) {
   const queryClient = useQueryClient();
 
   const query = useQuery({
@@ -14,12 +14,33 @@ export function useUsers(filters?: { page?: number; limit?: number; isActive?: b
     queryFn: async () => {
       const res = await apiFetch<UserItem[]>("/users", {
         params: {
-          page: filters?.page || 1,
-          limit: filters?.limit || 50,
-          "filter[isActive]": filters?.isActive,
+          page: Math.max(1, filters?.page || 1),
+          limit: Math.min(100, Math.max(1, filters?.limit || 50)),
         },
       });
-      return res;
+
+      // Normalize branchAccess to branches array for consistent UI access
+      const normalizedUsers = (res.data || []).map((u) => {
+        const branches =
+          u.branchAccess && u.branchAccess.length > 0
+            ? u.branchAccess.map((ba) => ({
+                branchId: ba.branchId,
+                branchName: ba.branch?.name,
+                role: ba.role,
+              }))
+            : u.branches || [];
+
+        return {
+          ...u,
+          branches,
+        };
+      });
+
+      return {
+        data: normalizedUsers,
+        meta: res.meta,
+        message: res.message,
+      };
     },
   });
 
@@ -28,16 +49,26 @@ export function useUsers(filters?: { page?: number; limit?: number; isActive?: b
       const payload: {
         email: string;
         fullName: string;
-        globalRole: string;
-        branches?: { branchId: string; role: string }[];
+        globalRole?: "OWNER" | "ADMIN";
+        branches?: { branchId: string; role: BranchRole }[];
       } = {
-        email: data.email,
-        fullName: data.fullName,
-        globalRole: data.globalRole || "STAFF",
+        email: data.email.trim(),
+        fullName: data.fullName.trim(),
       };
-      if (data.branchId && data.branchRole) {
-        payload.branches = [{ branchId: data.branchId, role: data.branchRole }];
+
+      if (data.globalRole === "ADMIN" || data.globalRole === "OWNER") {
+        payload.globalRole = data.globalRole;
       }
+
+      if (data.branchId && data.branchRole) {
+        payload.branches = [
+          {
+            branchId: data.branchId,
+            role: data.branchRole as BranchRole,
+          },
+        ];
+      }
+
       return apiFetch<UserItem>("/users/invite", {
         method: "POST",
         body: JSON.stringify(payload),
@@ -48,7 +79,10 @@ export function useUsers(filters?: { page?: number; limit?: number; isActive?: b
       queryClient.invalidateQueries({ queryKey: ["users"] });
     },
     onError: (err: unknown) => {
-      const message = err instanceof ApiError ? err.errors?.[0]?.message || err.message : "Failed to invite user";
+      const message =
+        err instanceof ApiError
+          ? err.errors?.[0]?.message || err.message
+          : "Failed to invite user";
       toast.error(message);
     },
   });
@@ -63,9 +97,13 @@ export function useUsers(filters?: { page?: number; limit?: number; isActive?: b
     onSuccess: (res) => {
       toast.success(res.message || "User updated successfully");
       queryClient.invalidateQueries({ queryKey: ["users"] });
+      queryClient.invalidateQueries({ queryKey: ["me"] });
     },
     onError: (err: unknown) => {
-      const message = err instanceof ApiError ? err.errors?.[0]?.message || err.message : "Failed to update user";
+      const message =
+        err instanceof ApiError
+          ? err.errors?.[0]?.message || err.message
+          : "Failed to update user";
       toast.error(message);
     },
   });
@@ -81,7 +119,10 @@ export function useUsers(filters?: { page?: number; limit?: number; isActive?: b
       queryClient.invalidateQueries({ queryKey: ["users"] });
     },
     onError: (err: unknown) => {
-      const message = err instanceof ApiError ? err.errors?.[0]?.message || err.message : "Failed to remove user";
+      const message =
+        err instanceof ApiError
+          ? err.errors?.[0]?.message || err.message
+          : "Failed to remove user";
       toast.error(message);
     },
   });
@@ -104,9 +145,42 @@ export function useUsers(filters?: { page?: number; limit?: number; isActive?: b
     onSuccess: () => {
       toast.success("Branch access updated");
       queryClient.invalidateQueries({ queryKey: ["users"] });
+      queryClient.invalidateQueries({ queryKey: ["me"] });
     },
     onError: (err: unknown) => {
-      const message = err instanceof ApiError ? err.errors?.[0]?.message || err.message : "Failed to update branch access";
+      const message =
+        err instanceof ApiError
+          ? err.errors?.[0]?.message || err.message
+          : "Failed to update branch access";
+      toast.error(message);
+    },
+  });
+
+  const updateBranchRoleMutation = useMutation({
+    mutationFn: async ({
+      userId,
+      branchId,
+      role,
+    }: {
+      userId: string;
+      branchId: string;
+      role: BranchRole;
+    }) => {
+      return apiFetch(`/users/${userId}/branches/${branchId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ role }),
+      });
+    },
+    onSuccess: () => {
+      toast.success("Branch role updated");
+      queryClient.invalidateQueries({ queryKey: ["users"] });
+      queryClient.invalidateQueries({ queryKey: ["me"] });
+    },
+    onError: (err: unknown) => {
+      const message =
+        err instanceof ApiError
+          ? err.errors?.[0]?.message || err.message
+          : "Failed to update branch role";
       toast.error(message);
     },
   });
@@ -120,9 +194,13 @@ export function useUsers(filters?: { page?: number; limit?: number; isActive?: b
     onSuccess: () => {
       toast.success("Branch access removed");
       queryClient.invalidateQueries({ queryKey: ["users"] });
+      queryClient.invalidateQueries({ queryKey: ["me"] });
     },
     onError: (err: unknown) => {
-      const message = err instanceof ApiError ? err.errors?.[0]?.message || err.message : "Failed to remove branch access";
+      const message =
+        err instanceof ApiError
+          ? err.errors?.[0]?.message || err.message
+          : "Failed to remove branch access";
       toast.error(message);
     },
   });
@@ -141,6 +219,8 @@ export function useUsers(filters?: { page?: number; limit?: number; isActive?: b
     deleteUser: deleteMutation.mutateAsync,
     isDeleting: deleteMutation.isPending,
     assignBranch: assignBranchMutation.mutateAsync,
+    updateBranchRole: updateBranchRoleMutation.mutateAsync,
+    isUpdatingBranchRole: updateBranchRoleMutation.isPending,
     removeBranch: removeBranchMutation.mutateAsync,
   };
 }

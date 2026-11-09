@@ -15,7 +15,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Loader2 } from "lucide-react";
-import type { Branch } from "@/types/api";
+import type { Branch, BranchRole } from "@/types/api";
 
 interface InviteUserFormProps {
   branches: Branch[];
@@ -118,15 +118,15 @@ export function InviteUserForm({
             <Label>Branch Duty Role</Label>
             <Select
               defaultValue="CASHIER"
-              onValueChange={(val) => setValue("branchRole", val as "MANAGER" | "CASHIER" | "STOCKIST")}
+              onValueChange={(val) => setValue("branchRole", val as BranchRole)}
             >
               <SelectTrigger>
                 <SelectValue placeholder="Branch role" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="CASHIER">Cashier (Sales/POS)</SelectItem>
-                <SelectItem value="STOCKIST">Stockist (Stock-in/Adjustments)</SelectItem>
+                <SelectItem value="CASHIER">Cashier (Sales & POS)</SelectItem>
                 <SelectItem value="MANAGER">Branch Manager</SelectItem>
+                <SelectItem value="VIEWER">Viewer (Read-only)</SelectItem>
               </SelectContent>
             </Select>
           </div>

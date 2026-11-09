@@ -11,7 +11,11 @@ export type LoginInput = z.infer<typeof loginSchema>;
 /* Branch Schemas */
 export const branchSchema = z.object({
   name: z.string().min(2, "Branch name must be at least 2 characters"),
-  code: z.string().min(2, "Code must be at least 2 characters").max(10, "Code cannot exceed 10 characters"),
+  code: z
+    .string()
+    .min(2, "Code must be at least 2 characters")
+    .max(10, "Code cannot exceed 10 characters")
+    .transform((val) => val.trim().toUpperCase()),
   address: z.string().optional(),
   phone: z.string().optional(),
 });
@@ -22,9 +26,9 @@ export type BranchInput = z.infer<typeof branchSchema>;
 export const inviteUserSchema = z.object({
   email: z.string().email("Please enter a valid email address"),
   fullName: z.string().min(2, "Full name must be at least 2 characters"),
-  globalRole: z.enum(["OWNER", "ADMIN", "STAFF"]),
+  globalRole: z.enum(["OWNER", "ADMIN", "STAFF"]).optional(),
   branchId: z.string().optional(),
-  branchRole: z.enum(["MANAGER", "CASHIER", "STOCKIST"]).optional(),
+  branchRole: z.enum(["MANAGER", "CASHIER", "VIEWER", "STOCKIST"]).optional(),
 });
 
 export type InviteUserInput = z.infer<typeof inviteUserSchema>;
@@ -32,10 +36,16 @@ export type InviteUserInput = z.infer<typeof inviteUserSchema>;
 export const updateUserSchema = z.object({
   fullName: z.string().min(2).optional(),
   isActive: z.boolean().optional(),
-  globalRole: z.enum(["OWNER", "ADMIN", "STAFF"]).optional(),
+  globalRole: z.enum(["OWNER", "ADMIN", "STAFF"]).nullable().optional(),
 });
 
 export type UpdateUserInput = z.infer<typeof updateUserSchema>;
+
+export const updateBranchRoleSchema = z.object({
+  role: z.enum(["MANAGER", "CASHIER", "VIEWER"]),
+});
+
+export type UpdateBranchRoleInput = z.infer<typeof updateBranchRoleSchema>;
 
 /* Category Schemas */
 export const categoryAttributeFieldSchema = z.object({

@@ -55,7 +55,11 @@ export async function apiFetch<T>(
   const supabase = createClient();
   const { data: sessionData } = await supabase.auth.getSession();
   const accessToken = sessionData.session?.access_token;
-  const csrfToken = getCookie("csrf_token");
+  let csrfToken = getCookie("csrf_token");
+  if (!csrfToken && typeof document !== "undefined") {
+    csrfToken = crypto.randomUUID();
+    document.cookie = `csrf_token=${csrfToken}; path=/; SameSite=Lax`;
+  }
 
   const headers = new Headers(options.headers);
   if (!headers.has("Content-Type") && !(options.body instanceof FormData)) {
@@ -126,9 +130,18 @@ export async function apiFetch<T>(
 
   if (isJson) {
     const envelope: ApiResponse<T> = await response.json();
+    const meta = envelope.meta;
+    if (meta && meta.pagination && meta.page === undefined) {
+      meta.page = meta.pagination.page;
+      meta.limit = meta.pagination.limit;
+      meta.total = meta.pagination.total;
+      meta.totalPages = meta.pagination.totalPages;
+      meta.hasNext = meta.pagination.hasNext;
+      meta.hasPrev = meta.pagination.hasPrev;
+    }
     return {
       data: envelope.data,
-      meta: envelope.meta,
+      meta,
       message: envelope.message || "Success",
     };
   }

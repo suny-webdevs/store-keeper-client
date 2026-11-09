@@ -483,29 +483,72 @@ export async function GET(
   const path = route.join("/");
   const searchParams = request.nextUrl.searchParams;
 
+  // 0a. /health (Liveness Probe)
+  if (path === "health") {
+    return NextResponse.json({
+      success: true,
+      message: "OK",
+      data: {
+        status: "ok",
+        timestamp: new Date().toISOString(),
+        uptime: process.uptime(),
+      },
+      meta: {
+        requestId: crypto.randomUUID(),
+        timestamp: new Date().toISOString(),
+      },
+    });
+  }
+
+  // 0b. /health/ready (Readiness Probe)
+  if (path === "health/ready") {
+    return NextResponse.json({
+      success: true,
+      message: "OK",
+      data: {
+        status: "ready",
+        database: "up",
+        redis: "up",
+        timestamp: new Date().toISOString(),
+      },
+      meta: {
+        requestId: crypto.randomUUID(),
+        timestamp: new Date().toISOString(),
+      },
+    });
+  }
+
   // 1. /auth/me
   if (path === "auth/me") {
     return NextResponse.json({
       success: true,
-      message: "Session authenticated",
-      data: users[0],
+      message: "OK",
+      data: {
+        userId: users[0].id,
+        tenantId: "tenant-alpha",
+        globalRole: users[0].globalRole,
+        branches: (users[0].branches || []).map((b) => ({
+          branchId: b.branchId,
+          role: b.role,
+        })),
+      },
+      meta: {
+        requestId: crypto.randomUUID(),
+        timestamp: new Date().toISOString(),
+      },
     });
   }
 
   // 2. /branches
   if (path === "branches") {
+    const activeBranches = branches.filter((b) => !b.deletedAt);
     return NextResponse.json({
       success: true,
-      message: "Branches retrieved",
-      data: branches,
+      message: "OK",
+      data: activeBranches,
       meta: {
-        type: "offset",
-        page: 1,
-        limit: 50,
-        total: branches.length,
-        totalPages: 1,
-        hasNext: false,
-        hasPrev: false,
+        requestId: crypto.randomUUID(),
+        timestamp: new Date().toISOString(),
       },
     });
   }
@@ -513,27 +556,51 @@ export async function GET(
   // 2b. /branches/:id
   if (path.startsWith("branches/") && !path.includes("/stock") && !path.includes("/sales") && !path.includes("/ledger")) {
     const branchId = path.split("/")[1];
-    const branch = branches.find((b) => b.id === branchId);
+    const branch = branches.find((b) => b.id === branchId && !b.deletedAt);
     if (!branch) {
-      return NextResponse.json({ success: false, message: "Branch not found" }, { status: 404 });
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Branch not found",
+          errors: [{ code: "NOT_FOUND", message: "Branch not found" }],
+          meta: { requestId: crypto.randomUUID(), timestamp: new Date().toISOString() },
+        },
+        { status: 404 }
+      );
     }
-    return NextResponse.json({ success: true, message: "Branch details", data: branch });
+    return NextResponse.json({
+      success: true,
+      message: "OK",
+      data: branch,
+      meta: { requestId: crypto.randomUUID(), timestamp: new Date().toISOString() },
+    });
   }
 
   // 3. /users
   if (path === "users") {
+    const page = Math.max(1, Number(searchParams.get("page") || 1));
+    const limit = Math.min(100, Math.max(1, Number(searchParams.get("limit") || 10)));
+    const activeUsers = users.filter((u) => !u.deletedAt);
+    const total = activeUsers.length;
+    const totalPages = Math.ceil(total / limit) || 1;
+    const start = (page - 1) * limit;
+    const pagedUsers = activeUsers.slice(start, start + limit);
+
     return NextResponse.json({
       success: true,
-      message: "Users list",
-      data: users,
+      message: "OK",
+      data: pagedUsers,
       meta: {
-        type: "offset",
-        page: 1,
-        limit: 50,
-        total: users.length,
-        totalPages: 1,
-        hasNext: false,
-        hasPrev: false,
+        requestId: crypto.randomUUID(),
+        timestamp: new Date().toISOString(),
+        pagination: {
+          page,
+          limit,
+          total,
+          totalPages,
+          hasNext: page < totalPages,
+          hasPrev: page > 1,
+        },
       },
     });
   }
@@ -813,42 +880,182 @@ export async function POST(
     // empty body
   }
 
-  // 1. Branches
+  // 1. Branches (Section 5.2)
   if (path === "branches") {
-    const newBranch = {
+    const uppercaseCode = String(body.code || "").trim().toUpperCase();
+    const duplicate = branches.find((b) => b.code.toUpperCase() === uppercaseCode && !b.deletedAt);
+    if (duplicate) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Duplicate value for: code",
+          errors: [{ field: "code", code: "DUPLICATE_ENTRY", message: "Value already exists" }],
+          meta: { requestId: crypto.randomUUID(), timestamp: new Date().toISOString() },
+        },
+        { status: 409 }
+      );
+    }
+
+    const newBranch: Branch = {
       id: `br_${Date.now()}`,
       name: body.name,
-      code: body.code,
+      code: uppercaseCode,
       address: body.address || null,
       phone: body.phone || null,
+      tenantId: "tenant-alpha",
       isActive: true,
+      deletedAt: null,
       createdAt: new Date().toISOString(),
     };
     branches.push(newBranch);
-    return NextResponse.json({
-      success: true,
-      message: `Branch "${newBranch.name}" created`,
-      data: newBranch,
-    });
+    return NextResponse.json(
+      {
+        success: true,
+        message: "Created successfully",
+        data: newBranch,
+        meta: { requestId: crypto.randomUUID(), timestamp: new Date().toISOString() },
+      },
+      { status: 201 }
+    );
   }
 
-  // 2. Users invite
+  // 2. Users invite (Section 6.2)
   if (path === "users/invite") {
-    const newUser = {
+    const duplicate = users.find(
+      (u) => u.email.toLowerCase() === String(body.email || "").toLowerCase() && !u.deletedAt
+    );
+    if (duplicate) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "A user with this email already exists in this tenant",
+          errors: [
+            {
+              code: "DUPLICATE_EMAIL",
+              message: "A user with this email already exists in this tenant",
+            },
+          ],
+          meta: { requestId: crypto.randomUUID(), timestamp: new Date().toISOString() },
+        },
+        { status: 409 }
+      );
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const branchAccessList = (body.branches || []).map((b: any) => {
+      const branchObj = branches.find((br) => br.id === b.branchId);
+      return {
+        id: `uba-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+        branchId: b.branchId,
+        role: b.role,
+        branch: {
+          name: branchObj?.name || "Main Branch",
+          code: branchObj?.code || "MAIN",
+        },
+      };
+    });
+
+    const newUser: UserItem = {
       id: `usr_${Date.now()}`,
       email: body.email,
       fullName: body.fullName,
-      globalRole: body.globalRole || "STAFF",
+      tenantId: "tenant-alpha",
+      globalRole: body.globalRole || null,
       isActive: true,
-      branches: body.branches || [],
+      branchAccess: branchAccessList,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      branches: branchAccessList.map((ba: any) => ({
+        branchId: ba.branchId,
+        branchName: ba.branch?.name,
+        role: ba.role,
+      })),
       createdAt: new Date().toISOString(),
     };
     users.push(newUser);
-    return NextResponse.json({
-      success: true,
-      message: `Invitation sent to ${body.email}`,
-      data: newUser,
-    });
+    return NextResponse.json(
+      {
+        success: true,
+        message: "Created successfully",
+        data: newUser,
+        meta: { requestId: crypto.randomUUID(), timestamp: new Date().toISOString() },
+      },
+      { status: 201 }
+    );
+  }
+
+  // 2b. POST /users/:id/branches (Assign branch access - Section 6.5)
+  if (path.startsWith("users/") && path.endsWith("/branches")) {
+    const userId = path.split("/")[1];
+    const user = users.find((u) => u.id === userId && !u.deletedAt);
+    if (!user) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "User not found",
+          errors: [{ code: "NOT_FOUND", message: "User not found" }],
+          meta: { requestId: crypto.randomUUID(), timestamp: new Date().toISOString() },
+        },
+        { status: 404 }
+      );
+    }
+
+    const branch = branches.find((b) => b.id === body.branchId && !b.deletedAt);
+    if (!branch) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Branch not found",
+          errors: [{ code: "NOT_FOUND", message: "Branch not found" }],
+          meta: { requestId: crypto.randomUUID(), timestamp: new Date().toISOString() },
+        },
+        { status: 404 }
+      );
+    }
+
+    if (!["MANAGER", "CASHIER", "VIEWER"].includes(body.role)) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Validation failed",
+          errors: [
+            {
+              code: "VALIDATION_FAILED",
+              message: "role must be one of the following values: MANAGER, CASHIER, VIEWER",
+            },
+          ],
+          meta: { requestId: crypto.randomUUID(), timestamp: new Date().toISOString() },
+        },
+        { status: 400 }
+      );
+    }
+
+    if (!user.branches) user.branches = [];
+    const existingIdx = user.branches.findIndex((b) => b.branchId === body.branchId);
+    if (existingIdx > -1) {
+      user.branches[existingIdx].role = body.role;
+    } else {
+      user.branches.push({
+        branchId: body.branchId,
+        branchName: branch.name,
+        role: body.role,
+      });
+    }
+
+    const assignmentId = `uba-${Date.now()}`;
+    return NextResponse.json(
+      {
+        success: true,
+        message: "Created successfully",
+        data: {
+          id: assignmentId,
+          userId,
+          branchId: body.branchId,
+          role: body.role,
+        },
+        meta: { requestId: crypto.randomUUID(), timestamp: new Date().toISOString() },
+      },
+      { status: 201 }
+    );
   }
 
   // 3. Categories
@@ -1160,20 +1367,122 @@ export async function PATCH(
 ) {
   const { route } = await params;
   const path = route.join("/");
-  const body = await request.json();
-
-  if (path.startsWith("branches/")) {
-    const id = path.split("/")[1];
-    const b = branches.find((branch) => branch.id === id);
-    if (b) Object.assign(b, body);
-    return NextResponse.json({ success: true, message: "Branch updated", data: b });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let body: Record<string, any> = {};
+  try {
+    body = await request.json();
+  } catch {
+    // empty body
   }
 
+  // 1. PATCH /users/:id/branches/:branchId (Section 6.6)
+  if (path.startsWith("users/") && path.includes("/branches/")) {
+    const parts = path.split("/");
+    const userId = parts[1];
+    const branchId = parts[3];
+    const user = users.find((u) => u.id === userId && !u.deletedAt);
+    if (!user) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "User not found",
+          errors: [{ code: "NOT_FOUND", message: "User not found" }],
+          meta: { requestId: crypto.randomUUID(), timestamp: new Date().toISOString() },
+        },
+        { status: 404 }
+      );
+    }
+
+    const branchAssignment = (user.branches || []).find((b) => b.branchId === branchId);
+    if (!branchAssignment) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "User does not have access to this branch",
+          errors: [{ code: "NOT_FOUND", message: "User does not have access to this branch" }],
+          meta: { requestId: crypto.randomUUID(), timestamp: new Date().toISOString() },
+        },
+        { status: 404 }
+      );
+    }
+
+    branchAssignment.role = body.role;
+    if (user.branchAccess) {
+      const ba = user.branchAccess.find((a) => a.branchId === branchId);
+      if (ba) ba.role = body.role;
+    }
+
+    return NextResponse.json({
+      success: true,
+      message: "Updated successfully",
+      data: {
+        id: `uba-${Date.now()}`,
+        userId,
+        branchId,
+        role: body.role,
+      },
+      meta: { requestId: crypto.randomUUID(), timestamp: new Date().toISOString() },
+    });
+  }
+
+  // 2. PATCH /users/:id (Section 6.3)
   if (path.startsWith("users/")) {
     const id = path.split("/")[1];
-    const u = users.find((user) => user.id === id);
-    if (u) Object.assign(u, body);
-    return NextResponse.json({ success: true, message: "User updated", data: u });
+    const u = users.find((user) => user.id === id && !user.deletedAt);
+    if (!u) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "User not found",
+          errors: [{ code: "NOT_FOUND", message: "User not found" }],
+          meta: { requestId: crypto.randomUUID(), timestamp: new Date().toISOString() },
+        },
+        { status: 404 }
+      );
+    }
+    if (body.fullName !== undefined) u.fullName = body.fullName;
+    if (body.isActive !== undefined) u.isActive = body.isActive;
+    if (body.globalRole !== undefined) u.globalRole = body.globalRole;
+    return NextResponse.json({
+      success: true,
+      message: "Updated successfully",
+      data: {
+        id: u.id,
+        email: u.email,
+        fullName: u.fullName,
+        globalRole: u.globalRole,
+        isActive: u.isActive,
+        deletedAt: null,
+      },
+      meta: { requestId: crypto.randomUUID(), timestamp: new Date().toISOString() },
+    });
+  }
+
+  // 3. PATCH /branches/:id (Section 5.4)
+  if (path.startsWith("branches/")) {
+    const id = path.split("/")[1];
+    const b = branches.find((branch) => branch.id === id && !branch.deletedAt);
+    if (!b) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Branch not found",
+          errors: [{ code: "NOT_FOUND", message: "Branch not found" }],
+          meta: { requestId: crypto.randomUUID(), timestamp: new Date().toISOString() },
+        },
+        { status: 404 }
+      );
+    }
+    if (body.name !== undefined) b.name = body.name;
+    if (body.phone !== undefined) b.phone = body.phone;
+    if (body.address !== undefined) b.address = body.address;
+    if (body.code !== undefined) b.code = body.code.toUpperCase();
+    return NextResponse.json({
+      success: true,
+      message: "Updated successfully",
+      data: b,
+      meta: { requestId: crypto.randomUUID(), timestamp: new Date().toISOString() },
+    });
   }
 
   if (path.startsWith("categories/")) {
@@ -1190,7 +1499,7 @@ export async function PATCH(
     return NextResponse.json({ success: true, message: "Product updated", data: p });
   }
 
-  return NextResponse.json({ success: true, message: "Updated", data: body });
+  return NextResponse.json({ success: true, message: "Updated successfully", data: body });
 }
 
 export async function DELETE(
@@ -1200,18 +1509,116 @@ export async function DELETE(
   const { route } = await params;
   const path = route.join("/");
 
-  if (path.startsWith("branches/")) {
-    const id = path.split("/")[1];
-    const idx = branches.findIndex((b) => b.id === id);
-    if (idx > -1) branches.splice(idx, 1);
-    return NextResponse.json({ success: true, message: "Branch deleted", data: { id } });
+  // 1. DELETE /users/:id/branches/:branchId (Section 6.7)
+  if (path.startsWith("users/") && path.includes("/branches/")) {
+    const parts = path.split("/");
+    const userId = parts[1];
+    const branchId = parts[3];
+    const user = users.find((u) => u.id === userId);
+    if (!user) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "User not found",
+          errors: [{ code: "NOT_FOUND", message: "User not found" }],
+          meta: { requestId: crypto.randomUUID(), timestamp: new Date().toISOString() },
+        },
+        { status: 404 }
+      );
+    }
+    user.branches = (user.branches || []).filter((b) => b.branchId !== branchId);
+    if (user.branchAccess) {
+      user.branchAccess = user.branchAccess.filter((ba) => ba.branchId !== branchId);
+    }
+    return NextResponse.json({
+      success: true,
+      message: "Deleted successfully",
+      data: { success: true },
+      meta: { requestId: crypto.randomUUID(), timestamp: new Date().toISOString() },
+    });
   }
 
+  // 2. DELETE /users/:id (Section 6.4)
   if (path.startsWith("users/")) {
     const id = path.split("/")[1];
-    const idx = users.findIndex((u) => u.id === id);
-    if (idx > -1) users.splice(idx, 1);
-    return NextResponse.json({ success: true, message: "User removed", data: { id } });
+    const u = users.find((user) => user.id === id && !user.deletedAt);
+    if (!u) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "User not found",
+          errors: [{ code: "NOT_FOUND", message: "User not found" }],
+          meta: { requestId: crypto.randomUUID(), timestamp: new Date().toISOString() },
+        },
+        { status: 404 }
+      );
+    }
+    u.isActive = false;
+    u.deletedAt = new Date().toISOString();
+    return NextResponse.json({
+      success: true,
+      message: "Deleted successfully",
+      data: {
+        id: u.id,
+        email: u.email,
+        fullName: u.fullName,
+        isActive: false,
+        deletedAt: u.deletedAt,
+      },
+      meta: { requestId: crypto.randomUUID(), timestamp: new Date().toISOString() },
+    });
+  }
+
+  // 3. DELETE /branches/:id (Section 5.5)
+  if (path.startsWith("branches/")) {
+    const id = path.split("/")[1];
+    const b = branches.find((branch) => branch.id === id && !branch.deletedAt);
+    if (!b) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Branch not found",
+          errors: [{ code: "NOT_FOUND", message: "Branch not found" }],
+          meta: { requestId: crypto.randomUUID(), timestamp: new Date().toISOString() },
+        },
+        { status: 404 }
+      );
+    }
+
+    // Check if branch has positive active stock on hand
+    const branchStock = stockItems.filter((s) => s.branchId === id);
+    const hasStock = branchStock.some((s) => s.qtyOnHand > 0);
+    if (hasStock) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Cannot delete branch with active stock on hand",
+          errors: [
+            {
+              code: "BRANCH_HAS_STOCK",
+              message: "Cannot delete branch with active stock on hand",
+            },
+          ],
+          meta: { requestId: crypto.randomUUID(), timestamp: new Date().toISOString() },
+        },
+        { status: 409 }
+      );
+    }
+
+    b.isActive = false;
+    b.deletedAt = new Date().toISOString();
+    return NextResponse.json({
+      success: true,
+      message: "Deleted successfully",
+      data: {
+        id: b.id,
+        name: b.name,
+        code: b.code,
+        isActive: false,
+        deletedAt: b.deletedAt,
+      },
+      meta: { requestId: crypto.randomUUID(), timestamp: new Date().toISOString() },
+    });
   }
 
   if (path.startsWith("categories/")) {
@@ -1228,5 +1635,5 @@ export async function DELETE(
     return NextResponse.json({ success: true, message: "Product deleted", data: { id } });
   }
 
-  return NextResponse.json({ success: true, message: "Resource deleted", data: { path } });
+  return NextResponse.json({ success: true, message: "Deleted successfully", data: { path } });
 }
