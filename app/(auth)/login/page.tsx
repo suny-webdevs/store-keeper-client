@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -160,6 +161,23 @@ export default function LoginPage() {
             </div>
           </div>
         </Card>
+
+        {/* Registration entry point */}
+        <div className="space-y-2">
+          <div className="flex items-center gap-3">
+            <span className="h-px flex-1 bg-border" aria-hidden="true" />
+            <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+              New here?
+            </span>
+            <span className="h-px flex-1 bg-border" aria-hidden="true" />
+          </div>
+          <Button asChild variant="outline" className="w-full bg-card">
+            <Link href="/register">
+              Create a workspace
+              <ArrowRight className="ml-1.5 h-3.5 w-3.5" aria-hidden="true" />
+            </Link>
+          </Button>
+        </div>
 
         {/* Security / CSRF note */}
         <p className="text-center text-[11px] text-muted-foreground">

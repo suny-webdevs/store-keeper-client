@@ -8,6 +8,73 @@ export const loginSchema = z.object({
 
 export type LoginInput = z.infer<typeof loginSchema>;
 
+/* Tenant Registration (Onboarding) Schemas */
+export const businessTypes = [
+  "RETAIL",
+  "GROCERY",
+  "PHARMACY",
+  "FASHION",
+  "ELECTRONICS",
+  "RESTAURANT",
+  "OTHER",
+] as const;
+
+export const registerCurrencies = ["BDT", "USD", "EUR", "INR", "GBP"] as const;
+
+export type BusinessType = (typeof businessTypes)[number];
+export type RegisterCurrency = (typeof registerCurrencies)[number];
+
+export const registerTenantSchema = z
+  .object({
+    /* Step 1 — Business */
+    businessName: z
+      .string()
+      .min(2, "Business name must be at least 2 characters")
+      .max(80, "Business name cannot exceed 80 characters"),
+    slug: z
+      .string()
+      .min(3, "Workspace URL must be at least 3 characters")
+      .max(40, "Workspace URL cannot exceed 40 characters")
+      .regex(
+        /^[a-z0-9]+(?:-[a-z0-9]+)*$/,
+        "Use lowercase letters, numbers and single hyphens"
+      ),
+    businessType: z.enum(businessTypes),
+    currency: z.enum(registerCurrencies),
+
+    /* Step 2 — Owner account */
+    fullName: z
+      .string()
+      .min(2, "Full name must be at least 2 characters")
+      .max(80, "Full name cannot exceed 80 characters"),
+    email: z.string().email("Please enter a valid email address"),
+    password: z
+      .string()
+      .min(8, "Password must be at least 8 characters")
+      .regex(/[A-Za-z]/, "Password must include a letter")
+      .regex(/[0-9]/, "Password must include a number"),
+    confirmPassword: z.string().min(1, "Please confirm your password"),
+
+    /* Step 3 — First branch */
+    branchName: z
+      .string()
+      .min(2, "Branch name must be at least 2 characters")
+      .max(80, "Branch name cannot exceed 80 characters"),
+    branchCode: z
+      .string()
+      .min(2, "Branch code must be at least 2 characters")
+      .max(10, "Branch code cannot exceed 10 characters")
+      .regex(/^[A-Z0-9-]+$/, "Use uppercase letters, numbers and hyphens"),
+    branchAddress: z.string().max(160, "Address cannot exceed 160 characters").optional(),
+    branchPhone: z.string().max(32, "Phone cannot exceed 32 characters").optional(),
+  })
+  .refine((values) => values.password === values.confirmPassword, {
+    message: "Passwords do not match",
+    path: ["confirmPassword"],
+  });
+
+export type RegisterTenantInput = z.infer<typeof registerTenantSchema>;
+
 /* Branch Schemas */
 export const branchSchema = z.object({
   name: z.string().min(2, "Branch name must be at least 2 characters"),
